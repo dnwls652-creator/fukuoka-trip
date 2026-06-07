@@ -22,6 +22,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Jua&family=Gowun+Dodum&family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <style>
   :root{
     --paper:#f6efe1; --paper-2:#fbf6ea; --ink:#23304f; --ink-soft:#52617f;
@@ -87,6 +88,11 @@
 
   section{margin-bottom:30px}
   .sec-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .sec-handle{display:none;flex:none;color:#b8a988;font-size:18px;cursor:grab;line-height:1;user-select:none;touch-action:none}
+  .sec-handle:active{cursor:grabbing}
+  body.editing .sec-handle{display:block}
+  section.sortable-ghost{opacity:.4}
+  section.sortable-chosen .sec-head{background:rgba(216,99,59,.08);border-radius:10px}
   .sec-head .ico{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-size:18px;background:var(--indigo);color:#f6efe1;flex:none}
   .sec-head.is-done .ico{background:var(--done)}
   .sec-head h2{font-family:'Jua',sans-serif;font-size:21px;color:var(--indigo)}
@@ -110,6 +116,12 @@
   .item.checked .body .d{opacity:.6}
   .item-del{display:none;background:none;border:none;color:#c0392b;font-size:18px;cursor:pointer;padding:0 4px;align-self:center;flex:none}
   body.editing .item-del{display:block}
+  .drag-handle{display:none;align-self:center;flex:none;color:#b8a988;font-size:18px;cursor:grab;padding:0 2px;line-height:1;user-select:none;touch-action:none}
+  .drag-handle:active{cursor:grabbing}
+  body.editing .drag-handle{display:block}
+  .item.sortable-ghost{opacity:.35;background:rgba(216,99,59,.12)}
+  .item.sortable-chosen{background:rgba(216,99,59,.06);box-shadow:0 8px 22px -10px var(--shadow)}
+  .item.sortable-drag{opacity:1}
   body.editing .item{cursor:default}
   body.editing .item .box{opacity:.35}
 
@@ -128,6 +140,10 @@
   .tip b{color:var(--indigo)}
   footer{text-align:center;margin-top:38px;color:var(--ink-soft);font-size:12.5px;font-family:'Gowun Batang',serif;line-height:1.9}
   footer .hr{width:46px;height:3px;background:var(--persimmon);border-radius:3px;margin:0 auto 16px}
+  .undo-toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,30px);z-index:50;background:var(--indigo);color:#f6efe1;padding:12px 16px;border-radius:30px;display:flex;align-items:center;gap:12px;box-shadow:0 12px 32px -8px rgba(0,0,0,.4);opacity:0;pointer-events:none;transition:.3s;font-size:14px;font-family:'Gowun Dodum',sans-serif}
+  .undo-toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+  .undo-toast button{background:var(--persimmon);color:#fff;border:none;border-radius:20px;padding:7px 14px;font-family:'Jua',sans-serif;font-size:13px;cursor:pointer}
+  .undo-toast button:hover{background:var(--persimmon-deep)}
 </style>
 
 <div class="grain"></div>
@@ -149,7 +165,8 @@
     <b>편집하는 법</b> — 고칠 <b>글씨를 클릭</b>해서 바로 타이핑하세요.<br>
     · 항목 삭제 → 오른쪽 <b>✕</b> · 항목 추가 → 칸 맨 아래 <b>＋ 항목 추가</b><br>
     · 새 묶음 추가 → 맨 아래 버튼 · 묶음 삭제 → 제목 옆 <b>삭제</b><br>
-    다 했으면 위의 <b>편집 끝내기</b>를 누르세요. 함께 쓰기 모드면 <b>세 명 모두에게</b> 바로 반영돼요.
+    다 했으면 위의 <b>편집 끝내기</b>를 누르세요. 함께 쓰기 모드면 <b>세 명 모두에게</b> 바로 반영돼요.<br>
+    · 항목 순서 → 항목 왼쪽 <b>⠿</b>를 끌기 (다른 묶음으로도 이동) · 큰 묶음 순서 → 제목 옆 <b>⠿</b>를 끌면 내용째 이동
   </div>
 
   <header>
@@ -176,6 +193,11 @@
   <div class="tip"><b>참고 메모</b> · 교통패스는 안 사기로 함(많이 안 돌아다닐 예정 → 그때그때 표 끊기). 동선은 진경이 다음 주쯤 짜기로 함.</div>
 
   <footer><div class="hr"></div>서정이와의 첫 후쿠오카 · 즐거운 여행 되세요 🌸<br>함께 쓰기 모드에서는 셋이 같은 내용을 실시간으로 공유해요.</footer>
+
+  <div class="undo-toast" id="undoToast">
+    <span>초기화했어요.</span>
+    <button id="undoBtn">↩ 되돌리기</button>
+  </div>
 </div>
 
 <script>
@@ -247,11 +269,22 @@
     document.querySelector('[data-meta="title"]').textContent = data.meta.title;
     document.querySelector('[data-meta="sub"]').textContent = data.meta.sub;
   }
+  function ensureUids(){
+    data.sections.forEach(function(s){
+      if(!s.u) s.u = 's'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+      s.items.forEach(function(it){
+        if(!it.u) it.u = 'u'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+      });
+    });
+  }
   function render(){
+    ensureUids();
     $sections.innerHTML='';
     data.sections.forEach(function(sec,si){
       var secEl=document.createElement('section');
+      secEl.dataset.suid = sec.u;
       secEl.innerHTML='<div class="sec-head '+(sec.preset?'is-done':'')+'">'+
+        '<span class="sec-handle" title="묶음 이동">⠿</span>'+
         '<span class="ico">'+sec.icon+'</span>'+
         '<h2 contenteditable="false" data-sec="'+si+'" data-ph="묶음 제목"></h2>'+
         '<button class="sec-del" data-delsec="'+si+'">삭제</button></div><div class="card"></div>';
@@ -259,8 +292,9 @@
       var card=secEl.querySelector('.card');
       sec.items.forEach(function(it,ii){
         var el=document.createElement('div');
-        el.className='item'+(it.c?' checked':''); el.dataset.si=si; el.dataset.ii=ii;
-        el.innerHTML='<span class="box">'+checkSVG+'</span><span class="body">'+
+        el.className='item'+(it.c?' checked':''); el.dataset.si=si; el.dataset.ii=ii; el.dataset.uid=it.u;
+        el.innerHTML='<span class="drag-handle" title="끌어서 이동">⠿</span>'+
+          '<span class="box">'+checkSVG+'</span><span class="body">'+
           '<span class="t" contenteditable="false" data-f="t" data-ph="할 일 제목"></span>'+
           '<span class="d" contenteditable="false" data-f="d" data-ph="설명 (선택)"></span>'+
           '<span class="who" contenteditable="false" data-f="w" data-ph="+태그"></span></span>'+
@@ -275,7 +309,49 @@
       card.appendChild(add);
       $sections.appendChild(secEl);
     });
-    applyEditable(); updateProgress();
+    applyEditable(); updateProgress(); initSortable();
+  }
+  // 드래그로 순서 바꾸기 (터치/마우스 모두 지원)
+  function initSortable(){
+    if(typeof Sortable==='undefined') return;
+    // ① 큰 묶음(섹션) 자체의 순서 바꾸기
+    if($sections._sortable){ try{ $sections._sortable.destroy(); }catch(e){} }
+    $sections._sortable = Sortable.create($sections, {
+      group:'fukuoka-sections',
+      draggable:'section',
+      handle:'.sec-handle',      // 묶음 제목의 손잡이로만 끌림
+      animation:160,
+      disabled: !editing,
+      onEnd:function(){ serializeFromDOM(); save(); setTimeout(render,0); }
+    });
+    // ② 묶음 안의 항목 순서 바꾸기 (다른 묶음으로도 이동)
+    document.querySelectorAll('.card').forEach(function(card){
+      if(card._sortable){ try{ card._sortable.destroy(); }catch(e){} }
+      card._sortable = Sortable.create(card, {
+        group:'fukuoka',
+        draggable:'.item',         // 항목만 끌림 ('항목 추가' 버튼은 고정)
+        handle:'.drag-handle',     // 손잡이로만 끌리게 (글씨 수정과 안 겹치게)
+        animation:160,
+        disabled: !editing,
+        onEnd:function(){ serializeFromDOM(); save(); setTimeout(render,0); }
+      });
+    });
+  }
+  // 화면에 보이는 순서(묶음 + 항목)를 데이터에 그대로 반영
+  function serializeFromDOM(){
+    var itemMap={}, secMap={};
+    data.sections.forEach(function(s){ secMap[s.u]=s; s.items.forEach(function(it){ itemMap[it.u]=it; }); });
+    var newSections=[];
+    $sections.querySelectorAll('section').forEach(function(secEl){
+      var s=secMap[secEl.dataset.suid]; if(!s) return;
+      var arr=[];
+      secEl.querySelectorAll('.card > .item').forEach(function(el){
+        var it=itemMap[el.dataset.uid]; if(it) arr.push(it);
+      });
+      s.items=arr;
+      newSections.push(s);
+    });
+    if(newSections.length) data.sections=newSections;
   }
   function applyEditable(){
     document.querySelectorAll('[contenteditable]').forEach(function(el){ el.contentEditable = editing?'true':'false'; });
@@ -320,14 +396,36 @@
 
   document.getElementById('editBtn').addEventListener('click',function(){
     editing=!editing; document.body.classList.toggle('editing',editing);
-    this.textContent=editing?'✅ 편집 끝내기':'✏️ 편집 켜기'; applyEditable();
+    this.textContent=editing?'✅ 편집 끝내기':'✏️ 편집 켜기'; applyEditable(); initSortable();
   });
   document.getElementById('addSecBtn').addEventListener('click',function(){
     data.sections.push({icon:'📌',title:'새 항목 묶음',items:[{t:'새 할 일',d:'',w:'',c:false}]}); render(); save();
   });
+  var backupData = null;
+  var BK_KEY = LS_KEY + '_backup';
   document.getElementById('resetBtn').addEventListener('click',function(){
-    if(confirm('처음 상태로 되돌릴까요?\n(함께 쓰기 모드면 세 명 모두에게 초기화돼요)')){
-      data=JSON.parse(JSON.stringify(DEFAULT)); applyHeader(); render(); save();
+    var ans = prompt('정말 처음 상태로 되돌릴까요?\n함께 쓰기 모드에서는 세 명 모두의 내용이 사라져요.\n\n그래도 초기화하려면 아래 칸에  초기화  라고 입력하세요.');
+    if(ans===null) return;                       // 취소를 누른 경우
+    if(ans.trim()!=='초기화'){                    // 글자가 다르면 아무것도 안 함
+      alert('입력이 \"초기화\"와 달라서 그대로 둘게요. (아무것도 안 지웠어요)');
+      return;
+    }
+    // 지우기 전에 현재 내용을 백업
+    backupData = JSON.parse(JSON.stringify(data));
+    try{ localStorage.setItem(BK_KEY, JSON.stringify(backupData)); }catch(e){}
+    if(db){ db.ref(NODE+'_backup').set(backupData).catch(function(){}); }
+    // 초기화 실행
+    data=JSON.parse(JSON.stringify(DEFAULT)); applyHeader(); render(); save();
+    document.getElementById('undoToast').classList.add('show');
+  });
+  document.getElementById('undoBtn').addEventListener('click',function(){
+    if(!backupData){ try{ backupData = JSON.parse(localStorage.getItem(BK_KEY)); }catch(e){} }
+    if(backupData){
+      data=JSON.parse(JSON.stringify(backupData)); applyHeader(); render(); save();
+      document.getElementById('undoToast').classList.remove('show');
+      alert('초기화 전 상태로 되돌렸어요. ✨');
+    }else{
+      alert('되돌릴 백업을 찾지 못했어요.');
     }
   });
 
