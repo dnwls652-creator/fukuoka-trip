@@ -1,0 +1,367 @@
+<!--
+  ============================================================
+   후쿠오카 여행 체크리스트 (3명 공유 버전)
+  ============================================================
+  이 파일은 "다같이 보고 수정하고 저장"하려면 무료 저장소(Firebase)가 필요해요.
+  설정 방법은 클로드가 보내준 안내(또는 아래 5단계)를 따라 하세요.
+
+   1) console.firebase.google.com 접속 → 프로젝트 만들기
+   2) 왼쪽 [빌드 → Realtime Database] → 데이터베이스 만들기 (테스트 모드로 시작)
+   3) [규칙(Rules)] 탭에서 아래로 바꾸고 '게시':
+        { "rules": { ".read": true, ".write": true } }
+   4) [프로젝트 설정 ⚙ → 내 앱 → 웹앱(</>) 추가] → firebaseConfig 복사
+   5) 아래 'FIREBASE_CONFIG = {...}' 자리에 그대로 붙여넣기 → 저장 → 깃허브에 업로드
+
+  ⚠ 설정을 안 채우면 '혼자 보기 모드'로만 작동해요(공유 안 됨).
+  ============================================================
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Jua&family=Gowun+Dodum&family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<style>
+  :root{
+    --paper:#f6efe1; --paper-2:#fbf6ea; --ink:#23304f; --ink-soft:#52617f;
+    --indigo:#2c3c63; --persimmon:#d9633b; --persimmon-deep:#bb4e2b;
+    --gold:#c89b3c; --line:#e3d8c2; --done:#7a8b6f; --shadow:rgba(35,48,79,.12);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{font-family:'Gowun Dodum',sans-serif;color:var(--ink);
+    background:radial-gradient(circle at 12% 8%, rgba(216,99,59,.07), transparent 38%),
+      radial-gradient(circle at 88% 92%, rgba(44,60,99,.08), transparent 42%),var(--paper);
+    background-attachment:fixed;line-height:1.65;padding:0 0 70px}
+  .grain{position:fixed;inset:0;pointer-events:none;opacity:.045;z-index:0;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+  .wrap{max-width:720px;margin:0 auto;padding:0 20px;position:relative;z-index:1}
+
+  .toolbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+    background:rgba(251,246,234,.92);backdrop-filter:blur(8px);border:1px solid var(--line);
+    border-radius:0 0 16px 16px;padding:11px 16px;box-shadow:0 6px 18px -12px var(--shadow)}
+  .toolbar .label{font-family:'Jua',sans-serif;color:var(--indigo);font-size:14px;margin-right:auto}
+  .pill{font-size:11.5px;padding:4px 11px;border-radius:30px;display:inline-flex;align-items:center;gap:6px;font-family:'Gowun Dodum',sans-serif}
+  .pill .dot{width:8px;height:8px;border-radius:50%}
+  .pill.shared{background:rgba(122,139,111,.18);color:#4f6043}.pill.shared .dot{background:#5e9c4e;box-shadow:0 0 0 3px rgba(94,156,78,.2)}
+  .pill.local{background:rgba(200,155,60,.16);color:#8a6a18}.pill.local .dot{background:var(--gold)}
+  .btn{font-family:'Gowun Dodum',sans-serif;border:none;border-radius:30px;padding:9px 16px;font-size:13px;cursor:pointer;transition:.18s;white-space:nowrap}
+  .btn-edit{background:var(--indigo);color:#f6efe1}.btn-edit:hover{background:#1f2d4a}
+  body.editing .btn-edit{background:var(--persimmon)}
+  .btn-ghost{background:none;border:1px solid var(--line);color:var(--ink-soft)}
+  .btn-ghost:hover{border-color:var(--persimmon);color:var(--persimmon)}
+
+  .setup{display:none;background:rgba(216,99,59,.08);border:1px dashed var(--persimmon);border-radius:12px;
+    padding:14px 16px;margin:14px 0 0;font-size:13px;color:var(--persimmon-deep);line-height:1.85}
+  body.local-mode .setup{display:block}
+  .setup b{color:var(--persimmon-deep)}
+
+  .help{display:none;background:rgba(200,155,60,.13);border:1px dashed var(--gold);border-radius:12px;padding:13px 16px;margin:14px 0 0;font-size:13.5px;color:#7a5e1c;line-height:1.8}
+  body.editing .help{display:block}
+  .help b{color:var(--persimmon-deep)}
+
+  header{padding:36px 0 24px;text-align:center}
+  .kana{font-family:'Black Han Sans',sans-serif;font-size:13px;letter-spacing:7px;color:var(--persimmon);opacity:.85;margin-bottom:8px}
+  h1{font-family:'Jua',sans-serif;font-size:clamp(38px,8.5vw,58px);line-height:1;color:var(--indigo);letter-spacing:-1px}
+  .sub{margin-top:14px;font-family:'Gowun Batang',serif;color:var(--ink-soft);font-size:15px}
+
+  .ticket{margin:22px 0 8px;background:var(--paper-2);border-radius:18px;box-shadow:0 10px 30px -12px var(--shadow);border:1px solid var(--line);display:flex;flex-wrap:wrap;overflow:hidden;position:relative}
+  .ticket:before,.ticket:after{content:"";position:absolute;width:20px;height:20px;background:var(--paper);border-radius:50%;top:50%;transform:translateY(-50%)}
+  .ticket:before{left:-10px}.ticket:after{right:-10px}
+  .leg{flex:1 1 200px;padding:20px 24px}.leg+.leg{border-top:1px dashed var(--line)}
+  @media(min-width:560px){.leg+.leg{border-top:none;border-left:1px dashed var(--line)}}
+  .leg .route{font-family:'Jua',sans-serif;font-size:20px;color:var(--indigo);display:flex;align-items:center;gap:10px}
+  .leg .route span{color:var(--persimmon);font-size:18px}
+  .leg .when{margin-top:6px;color:var(--ink-soft);font-size:14px}
+  .leg .flt{margin-top:2px;font-size:12px;color:var(--gold);letter-spacing:1px}
+  .ticket .pnr{flex:1 1 100%;background:var(--indigo);color:#f6efe1;padding:11px 24px;font-size:13px;letter-spacing:1px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px}
+  .ticket .pnr b{font-family:'Jua',sans-serif;letter-spacing:3px}
+
+  .progress-card{margin:24px 0;background:var(--paper-2);border:1px solid var(--line);border-radius:16px;padding:16px 20px;box-shadow:0 6px 20px -12px var(--shadow)}
+  .progress-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .progress-top .lab{font-family:'Jua',sans-serif;color:var(--indigo);font-size:16px}
+  .progress-top .pct{font-family:'Black Han Sans',sans-serif;color:var(--persimmon);font-size:22px}
+  .bar{height:11px;background:#ece2cd;border-radius:20px;overflow:hidden}
+  .bar i{display:block;height:100%;width:0;border-radius:20px;background:linear-gradient(90deg,var(--gold),var(--persimmon));transition:width .5s cubic-bezier(.4,0,.2,1)}
+  .cheer{margin-top:9px;font-size:13px;color:var(--ink-soft);min-height:18px}
+
+  section{margin-bottom:30px}
+  .sec-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .sec-head .ico{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-size:18px;background:var(--indigo);color:#f6efe1;flex:none}
+  .sec-head.is-done .ico{background:var(--done)}
+  .sec-head h2{font-family:'Jua',sans-serif;font-size:21px;color:var(--indigo)}
+  .sec-del{display:none;margin-left:auto;background:none;border:none;color:#c0392b;font-size:13px;cursor:pointer;padding:4px 8px}
+  body.editing .sec-del{display:inline-block}
+
+  .card{background:var(--paper-2);border:1px solid var(--line);border-radius:14px;padding:6px 4px;box-shadow:0 6px 18px -12px var(--shadow)}
+  .item{display:flex;gap:14px;padding:14px 16px;border-radius:11px;cursor:pointer;transition:background .2s;align-items:flex-start}
+  .item:hover{background:rgba(216,99,59,.05)}
+  .item+.item{border-top:1px solid var(--line)}
+  .box{width:24px;height:24px;border:2px solid #c9bb9f;border-radius:7px;flex:none;margin-top:2px;display:grid;place-items:center;transition:all .25s;background:#fff}
+  .box svg{width:14px;height:14px;stroke:#fff;stroke-width:3.4;fill:none;stroke-dasharray:20;stroke-dashoffset:20;transition:stroke-dashoffset .3s .05s}
+  .item .body{flex:1}
+  .item .body .t{font-family:'Gowun Batang',serif;font-weight:700;font-size:16px;color:var(--ink);transition:color .25s}
+  .item .body .d{font-size:13.5px;color:var(--ink-soft);margin-top:3px}
+  .item .body .who{display:inline-block;margin-top:7px;font-size:11px;letter-spacing:.5px;background:rgba(44,60,99,.08);color:var(--indigo);padding:2px 9px;border-radius:30px}
+  .item .body .who:empty{display:none}
+  .item.checked .box{background:var(--persimmon);border-color:var(--persimmon)}
+  .item.checked .box svg{stroke-dashoffset:0}
+  .item.checked .body .t{color:#a99f8c;text-decoration:line-through;text-decoration-color:#cbbfa6}
+  .item.checked .body .d{opacity:.6}
+  .item-del{display:none;background:none;border:none;color:#c0392b;font-size:18px;cursor:pointer;padding:0 4px;align-self:center;flex:none}
+  body.editing .item-del{display:block}
+  body.editing .item{cursor:default}
+  body.editing .item .box{opacity:.35}
+
+  body.editing [contenteditable]{outline:1.5px dashed rgba(216,99,59,.45);outline-offset:3px;border-radius:4px;cursor:text}
+  body.editing [contenteditable]:focus{outline:2px solid var(--persimmon);background:#fff}
+  [contenteditable]:empty:before{content:attr(data-ph);color:#bbae93}
+
+  .add-item{display:none;width:100%;text-align:center;padding:12px;background:none;border:none;border-top:1px dashed var(--line);color:var(--persimmon);font-family:'Jua',sans-serif;font-size:14px;cursor:pointer;border-radius:0 0 12px 12px}
+  .add-item:hover{background:rgba(216,99,59,.06)}
+  body.editing .add-item{display:block}
+  .add-section{display:none;width:100%;text-align:center;padding:16px;margin-bottom:30px;background:rgba(44,60,99,.05);border:1.5px dashed var(--indigo);border-radius:14px;color:var(--indigo);font-family:'Jua',sans-serif;font-size:15px;cursor:pointer}
+  .add-section:hover{background:rgba(44,60,99,.1)}
+  body.editing .add-section{display:block}
+
+  .tip{background:rgba(44,60,99,.05);border-left:3px solid var(--gold);border-radius:0 10px 10px 0;padding:13px 16px;font-size:13.5px;color:var(--ink-soft);margin-top:12px}
+  .tip b{color:var(--indigo)}
+  footer{text-align:center;margin-top:38px;color:var(--ink-soft);font-size:12.5px;font-family:'Gowun Batang',serif;line-height:1.9}
+  footer .hr{width:46px;height:3px;background:var(--persimmon);border-radius:3px;margin:0 auto 16px}
+</style>
+
+<div class="grain"></div>
+<div class="wrap">
+
+  <div class="toolbar">
+    <span class="label">후쿠오카 여행 체크리스트</span>
+    <span class="pill local" id="statusPill"><span class="dot"></span><span id="statusText">혼자 보기</span></span>
+    <button class="btn btn-edit" id="editBtn">✏️ 편집 켜기</button>
+    <button class="btn btn-ghost" id="resetBtn">↺ 초기화</button>
+  </div>
+
+  <div class="setup">
+    <b>아직 '혼자 보기 모드'예요.</b> 셋이 같이 쓰려면 무료 저장소(Firebase) 연결이 필요해요.
+    파일 위쪽 안내의 1~5단계를 따라 <b>FIREBASE_CONFIG</b> 칸을 채우면 자동으로 '함께 쓰기'로 바뀌어요. ✨
+  </div>
+
+  <div class="help">
+    <b>편집하는 법</b> — 고칠 <b>글씨를 클릭</b>해서 바로 타이핑하세요.<br>
+    · 항목 삭제 → 오른쪽 <b>✕</b> · 항목 추가 → 칸 맨 아래 <b>＋ 항목 추가</b><br>
+    · 새 묶음 추가 → 맨 아래 버튼 · 묶음 삭제 → 제목 옆 <b>삭제</b><br>
+    다 했으면 위의 <b>편집 끝내기</b>를 누르세요. 함께 쓰기 모드면 <b>세 명 모두에게</b> 바로 반영돼요.
+  </div>
+
+  <header>
+    <div class="kana">ふくおか・FUKUOKA</div>
+    <h1 contenteditable="false" data-meta="title" data-ph="여행 제목">후쿠오카 여행 준비</h1>
+    <div class="sub" contenteditable="false" data-meta="sub" data-ph="날짜·설명">서정이와 함께하는 셋(+1)의 첫 가족여행 · 2026. 6. 23 ~ 6. 26</div>
+  </header>
+
+  <div class="ticket">
+    <div class="leg"><div class="route">부산 <span>→</span> 후쿠오카</div><div class="when">6/23 (화) 14:50 출발</div><div class="flt">EASTAR JET · ZE943</div></div>
+    <div class="leg"><div class="route">후쿠오카 <span>→</span> 부산</div><div class="when">6/26 (금) 16:55 출발</div><div class="flt">EASTAR JET · ZE944</div></div>
+    <div class="pnr"><span>예매번호</span> <b>TBINPA</b> <span>· 3명 · 위탁수하물 15kg</span></div>
+  </div>
+
+  <div class="progress-card">
+    <div class="progress-top"><span class="lab">준비 진행률</span><span class="pct" id="pct">0%</span></div>
+    <div class="bar"><i id="barFill"></i></div>
+    <div class="cheer" id="cheer">하나씩 체크해볼까요?</div>
+  </div>
+
+  <div id="sections"></div>
+  <button class="add-section" id="addSecBtn">＋ 새 항목 묶음 추가</button>
+
+  <div class="tip"><b>참고 메모</b> · 교통패스는 안 사기로 함(많이 안 돌아다닐 예정 → 그때그때 표 끊기). 동선은 진경이 다음 주쯤 짜기로 함.</div>
+
+  <footer><div class="hr"></div>서정이와의 첫 후쿠오카 · 즐거운 여행 되세요 🌸<br>함께 쓰기 모드에서는 셋이 같은 내용을 실시간으로 공유해요.</footer>
+</div>
+
+<script>
+  /* ===== 여기에 Firebase 설정을 붙여넣으세요 ===== */
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyCH1w5G9y1tBveOoDXAMqqKcDxuHG1rJ14",
+    authDomain: "fukuoka-trip-preparation.firebaseapp.com",
+    databaseURL: "https://fukuoka-trip-preparation-default-rtdb.firebaseio.com",
+    projectId: "fukuoka-trip-preparation",
+    storageBucket: "fukuoka-trip-preparation.firebasestorage.app",
+    messagingSenderId: "228256206518",
+    appId: "1:228256206518:web:1365d4f7f03d6727e76017"
+  };
+  /* ============================================ */
+
+  const NODE = 'fukuoka_checklist';      // 세 명이 공유하는 데이터 위치
+  const LS_KEY = 'fukuoka_checklist_v3'; // 혼자 보기 모드용 저장 키
+
+  const DEFAULT = {
+    meta:{ title:'후쿠오카 여행 준비', sub:'서정이와 함께하는 셋(+1)의 첫 가족여행 · 2026. 6. 23 ~ 6. 26' },
+    sections:[
+      { icon:'✓', title:'이미 끝낸 것', preset:true, items:[
+        {t:'항공권 예매 완료', d:'이스타항공 3명 · 가는 편 ZE943 / 오는 편 ZE944', w:'', c:true},
+        {t:'여권 발급', d:'세 명 모두 신청·수령 완료', w:'', c:true},
+        {t:'숙소 예약 완료', d:'호텔 공식홈페이지 · 방 2개 · 나카스강/텐진미나미역 근처 · 캐널시티 도보 10분', w:'', c:true},
+        {t:'경주 → 부산공항 이동편', d:'형부 차로 다 같이 · 늦어도 11시 출발', w:'', c:true},
+      ]},
+      { icon:'📝', title:'출발 전 꼭 챙기기', items:[
+        {t:'여행자 보험 가입', d:'여행 당일 0시 ~ 귀국일 12시까지 커버되게 · 미리 가입하기', w:'각자', c:false},
+        {t:'비짓재팬 웹 등록', d:'입국 절차용 QR · 진경이 할 때 방법 알려주기로 함', w:'진경 안내', c:false},
+        {t:'휴대폰 통신 준비 (이심 / 로밍)', d:'진경·찜이 → 이심 / 형부 → 통화 많으면 통신사 앱 로밍 고려', w:'각자', c:false},
+        {t:'캐리어 준비', d:'진경 캐리어 새로 구매 예정', w:'진경', c:false},
+        {t:'호텔에 두 객실 인접 요청', d:'방 최대한 붙여달라고 문의 넣기', w:'진경', c:false},
+      ]},
+      { icon:'🍜', title:'맛집 예약 미션', items:[
+        {t:'히키니쿠토코메 (함바그) 예약 도전', d:'무료예약은 방문 일주일 전 매일 12시 오픈(선착순) · 수요일 휴무 · 사전예약 시 인당 1만원 자릿세', w:'6/15~16 시도', c:false},
+        {t:'우나기노에이토 (우나기동) 예약', d:'캐널시티점 · 첫날 저녁 후보 · 예약해두는 게 편함', w:'예약 권장', c:false},
+        {t:'고리짱 (오니기리) — 아침 포장', d:'평일 7시 오픈 · 산책 겸 사와서 숙소에서 아침으로', w:'예약 불필요', c:false},
+        {t:'모츠나베 오오야마', d:'후보로 찾아둠 · 미소맛이 기본', w:'후보', c:false},
+      ]},
+      { icon:'🧳', title:'현지에서 할 일', items:[
+        {t:'공항에서 유모차 대여', d:'트라이크 안 가져가고 현장 대여 · 하루 1,000엔 · 예약 없이 당일 보고 빌리기', w:'현장·예약X', c:false},
+        {t:'첫날: 공항 → 호텔 택시 이동', d:'도착 4시쯤 → 짐 풀고 캐널시티 저녁(우나기동) → 편의점 들러 일찍 휴식', w:'', c:false},
+      ]},
+      { icon:'📸', title:'하면 좋은 것 (선택)', items:[
+        {t:'셋이 시밀러룩 맞추기', d:'진경 제안 · 애기랑 사진 기깔나게 찍기용', w:'선택', c:false},
+      ]},
+    ]
+  };
+
+  let data = JSON.parse(JSON.stringify(DEFAULT));
+  let editing = false;
+  let db = null;
+  let lastJSON = '';
+  const checkSVG = '<svg viewBox="0 0 18 18"><path d="M3 9l4 4 8-9"/></svg>';
+  const $sections = document.getElementById('sections');
+
+  /* ---- 저장소: 혼자 모드(localStorage) ---- */
+  function lsGet(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)); }catch(e){ return null; } }
+  function lsSet(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }catch(e){} }
+
+  function save(){
+    lsSet();
+    if(db){ lastJSON = JSON.stringify(data); db.ref(NODE).set(data).catch(function(){}); }
+  }
+
+  /* ---- 화면 그리기 ---- */
+  function applyHeader(){
+    document.querySelector('[data-meta="title"]').textContent = data.meta.title;
+    document.querySelector('[data-meta="sub"]').textContent = data.meta.sub;
+  }
+  function render(){
+    $sections.innerHTML='';
+    data.sections.forEach(function(sec,si){
+      var secEl=document.createElement('section');
+      secEl.innerHTML='<div class="sec-head '+(sec.preset?'is-done':'')+'">'+
+        '<span class="ico">'+sec.icon+'</span>'+
+        '<h2 contenteditable="false" data-sec="'+si+'" data-ph="묶음 제목"></h2>'+
+        '<button class="sec-del" data-delsec="'+si+'">삭제</button></div><div class="card"></div>';
+      secEl.querySelector('h2').textContent=sec.title;
+      var card=secEl.querySelector('.card');
+      sec.items.forEach(function(it,ii){
+        var el=document.createElement('div');
+        el.className='item'+(it.c?' checked':''); el.dataset.si=si; el.dataset.ii=ii;
+        el.innerHTML='<span class="box">'+checkSVG+'</span><span class="body">'+
+          '<span class="t" contenteditable="false" data-f="t" data-ph="할 일 제목"></span>'+
+          '<span class="d" contenteditable="false" data-f="d" data-ph="설명 (선택)"></span>'+
+          '<span class="who" contenteditable="false" data-f="w" data-ph="+태그"></span></span>'+
+          '<button class="item-del" title="삭제">✕</button>';
+        el.querySelector('[data-f="t"]').textContent=it.t;
+        el.querySelector('[data-f="d"]').textContent=it.d;
+        el.querySelector('[data-f="w"]').textContent=it.w;
+        card.appendChild(el);
+      });
+      var add=document.createElement('button');
+      add.className='add-item'; add.textContent='＋ 항목 추가'; add.dataset.addsec=si;
+      card.appendChild(add);
+      $sections.appendChild(secEl);
+    });
+    applyEditable(); updateProgress();
+  }
+  function applyEditable(){
+    document.querySelectorAll('[contenteditable]').forEach(function(el){ el.contentEditable = editing?'true':'false'; });
+  }
+  var cheers=[{m:0,t:'하나씩 체크해볼까요?'},{m:1,t:'좋아요, 시작이 반!'},{m:30,t:'순조롭게 가고 있어요 👍'},{m:55,t:'절반 넘었어요! 거의 다 왔다'},{m:80,t:'얼마 안 남았어요 ✨'},{m:100,t:'완벽 준비 완료! 즐거운 여행 되세요 🎉'}];
+  function updateProgress(){
+    var total=0,done=0;
+    data.sections.forEach(function(s){ s.items.forEach(function(it){ total++; if(it.c)done++; }); });
+    var pct=total?Math.round(done/total*100):0;
+    document.getElementById('pct').textContent=pct+'%';
+    document.getElementById('barFill').style.width=pct+'%';
+    var msg=cheers[0].t; cheers.forEach(function(c){ if(pct>=c.m)msg=c.t; });
+    document.getElementById('cheer').textContent=msg;
+  }
+
+  /* ---- 클릭 이벤트 ---- */
+  $sections.addEventListener('click',function(e){
+    var item=e.target.closest('.item');
+    if(e.target.closest('.item-del')){ data.sections[item.dataset.si].items.splice(+item.dataset.ii,1); render(); save(); return; }
+    var add=e.target.closest('.add-item');
+    if(add){ data.sections[+add.dataset.addsec].items.push({t:'새 할 일',d:'',w:'',c:false}); render(); save(); return; }
+    var ds=e.target.closest('[data-delsec]');
+    if(ds){ if(confirm('이 묶음을 통째로 지울까요?')){ data.sections.splice(+ds.dataset.delsec,1); render(); save(); } return; }
+    if(item && !editing && !e.target.closest('[contenteditable]')){
+      var it=data.sections[item.dataset.si].items[item.dataset.ii];
+      it.c=!it.c; item.classList.toggle('checked',it.c); updateProgress(); save();
+    }
+  });
+
+  function syncField(el){
+    var item=el.closest('.item');
+    if(item){ data.sections[item.dataset.si].items[item.dataset.ii][el.dataset.f]=el.textContent.trim(); }
+    else if(el.dataset.sec!==undefined){ data.sections[+el.dataset.sec].title=el.textContent.trim(); }
+    else if(el.dataset.meta){ data.meta[el.dataset.meta]=el.textContent.trim(); }
+  }
+  document.addEventListener('blur',function(e){
+    if(e.target.matches && e.target.matches('[contenteditable]')){ syncField(e.target); save(); }
+  },true);
+  document.addEventListener('keydown',function(e){
+    if(e.target.matches && e.target.matches('h1[contenteditable],.t[contenteditable],h2[contenteditable]') && e.key==='Enter'){ e.preventDefault(); e.target.blur(); }
+  });
+
+  document.getElementById('editBtn').addEventListener('click',function(){
+    editing=!editing; document.body.classList.toggle('editing',editing);
+    this.textContent=editing?'✅ 편집 끝내기':'✏️ 편집 켜기'; applyEditable();
+  });
+  document.getElementById('addSecBtn').addEventListener('click',function(){
+    data.sections.push({icon:'📌',title:'새 항목 묶음',items:[{t:'새 할 일',d:'',w:'',c:false}]}); render(); save();
+  });
+  document.getElementById('resetBtn').addEventListener('click',function(){
+    if(confirm('처음 상태로 되돌릴까요?\n(함께 쓰기 모드면 세 명 모두에게 초기화돼요)')){
+      data=JSON.parse(JSON.stringify(DEFAULT)); applyHeader(); render(); save();
+    }
+  });
+
+  function setStatus(mode){
+    var pill=document.getElementById('statusPill'), txt=document.getElementById('statusText');
+    if(mode==='shared'){ document.body.classList.remove('local-mode'); pill.className='pill shared'; txt.textContent='함께 쓰는 중'; }
+    else { document.body.classList.add('local-mode'); pill.className='pill local'; txt.textContent='혼자 보기'; }
+  }
+
+  /* ---- 공유 모드 켜기 ---- */
+  function startShared(){
+    if(!window.firebase) return false;
+    if(!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey.indexOf('여기에')===0) return false;
+    try{
+      firebase.initializeApp(FIREBASE_CONFIG);
+      db=firebase.database();
+      db.ref(NODE).on('value',function(snap){
+        var val=snap.val();
+        if(!val){ // 저장소가 비어있으면 현재 내용으로 처음 채움
+          data = lsGet() || data; lastJSON=JSON.stringify(data);
+          db.ref(NODE).set(data); applyHeader(); render(); return;
+        }
+        var js=JSON.stringify(val);
+        if(js===lastJSON) return;                                   // 내가 방금 쓴 것
+        if(document.activeElement && document.activeElement.isContentEditable) return; // 누가 타이핑 중이면 잠깐 보류
+        lastJSON=js; data=val; applyHeader(); render();
+      });
+      return true;
+    }catch(e){ return false; }
+  }
+
+  /* ---- 시작 ---- */
+  (function init(){
+    if(startShared()){ setStatus('shared'); }
+    else { setStatus('local'); var local=lsGet(); if(local) data=local; applyHeader(); render(); }
+  })();
+</script>
